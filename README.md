@@ -44,6 +44,8 @@ You will also see `GET /from-config` every 10 seconds — that is the declarativ
 [docker-compose.yml](docker-compose.yml), no API call needed.
 
 Open the dashboard at <http://localhost:8080/hangfire> (`admin` / `change-me`, set in the compose file).
+It is **on by default and never open**: run the image with no credentials and it generates a password and logs it once
+(`docker logs <container> | grep GENERATED`).
 
 The quick start uses **in-memory storage**: jobs vanish when the container restarts. For durable jobs:
 
@@ -130,23 +132,23 @@ wins. Invalid configuration fails at startup with a clear message in the log.
 | `Scheduler__CallbackTimeoutSeconds` | int | `30` | Per-callback HTTP timeout. |
 | `Scheduler__InvisibilityTimeoutSeconds` | int | `120` | After a worker crashes mid-job, seconds before the job is re-queued and run again. Must be at least `CallbackTimeoutSeconds`+30. |
 | `Scheduler__ReconcileConfigJobs` | bool | `true` | On startup, remove recurring jobs that were registered from `Jobs` config earlier but are no longer in it. Never touches jobs created through the API. |
-| `Scheduler__DashboardEnabled` | bool | `false` | Serve the dashboard at `/hangfire`. |
-| `Scheduler__DashboardAuthMode` | `Basic` \| `None` | `Basic` | `Basic` needs the two settings below. `None` means you front it with your own auth proxy — never expose the dashboard unauthenticated. |
-| `Scheduler__DashboardUsername` | string | _(empty)_ | Basic-auth user. |
-| `Scheduler__DashboardPassword` | string | _(empty)_ | Basic-auth password. |
+| `Scheduler__DashboardEnabled` | bool | `true` | Serve the dashboard at `/hangfire`. **On by default**; set `false` to remove it. |
+| `Scheduler__DashboardAuthMode` | `Basic` \| `None` | `Basic` | `Basic` needs a password (below). `None` means you front it with your own auth proxy: the dashboard is then open to anything that can reach the port. |
+| `Scheduler__DashboardUsername` | string | `admin` | Basic-auth user. |
+| `Scheduler__DashboardPassword` | string | _(generated)_ | Basic-auth password. **If empty, a random one is generated at startup and written once to the log** so the default dashboard is never unauthenticated. Every replica generates its own, so set this in real deployments (use `_FILE` with a mounted secret). |
 | `Jobs__N__Id/Cron/Url/Method` | | | Declarative recurring jobs (above). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | url | _(unset)_ | Standard OpenTelemetry; unset = nothing exported. Also `OTEL_SERVICE_NAME` etc. Traces cover HTTP, jobs and Redis. |
 | `ASPNETCORE_HTTP_PORTS` | string | `8080` | Listening port. |
 
 **Secrets.** Any setting can come from a file by adding `_FILE`, e.g.
 `Scheduler__RedisConnectionString_FILE=/run/secrets/redis` — use Docker/Kubernetes secret mounts so
-credentials do not show in `docker inspect`. The service never logs its configuration.
+credentials do not show in `docker inspect`. The service does not log its configuration; the one deliberate exception is the generated dashboard password (see above), which appears once in the log only when you have not set one.
 
 ## Operating it
 
 See the **[runbook](docs/RUNBOOK.md)** for failed jobs, late callbacks, crashes, store outages and upgrades.
 
-**Dashboard.** With `Scheduler__DashboardEnabled=true` you can see the job list, open a *failed* job and read its
+**Dashboard.** On by default at `/hangfire` (see [Configuration](#configuration) for the password). You can see the job list, open a *failed* job and read its
 exception, **retry** it, trigger a recurring job now, and delete jobs. Exposing it publicly is a risk: put it behind
 your ingress/auth proxy even with Basic auth on.
 

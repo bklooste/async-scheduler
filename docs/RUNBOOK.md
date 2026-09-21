@@ -5,7 +5,7 @@ What to do when something looks wrong. Everything here was exercised against the
 
 ## A job failed — why, and how do I retry it?
 
-1. Enable the dashboard (`Scheduler__DashboardEnabled=true` with username/password) and open `/hangfire`.
+1. Open `/hangfire` (on by default; user `admin`). If you did not set `Scheduler__DashboardPassword`, the password was generated at startup and logged once: `kubectl logs <pod> | grep GENERATED` (each replica has its own). Set the password from a Secret for anything long-lived.
 2. **Retries** lists jobs whose callback failed and are waiting for the next automatic attempt. **Failed** lists
    jobs that ran out of attempts (Hangfire's default is 10 attempts with growing backoff).
 3. Open the job: the detail page shows the **exception** (e.g. `HttpRequestException: Name or service not known`

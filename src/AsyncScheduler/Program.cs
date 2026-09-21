@@ -74,6 +74,13 @@ builder.Services.AddOpenTelemetry()
     })
     .WithMetrics(m => m.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddOtlpExporter());
 
+// Dashboard credentials. Never open by default: with no password configured, generate one and log it once.
+var dashboardUser = options.DashboardUsername;
+var dashboardPassword = options.DashboardPassword;
+var generatedPassword = options.DashboardEnabled && options.DashboardAuthMode == DashboardAuth.Basic && string.IsNullOrEmpty(dashboardPassword);
+if (generatedPassword)
+    dashboardPassword = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(12)).ToLowerInvariant();
+
 var app = builder.Build();
 
 app.MapHealthChecks("/health");
@@ -81,8 +88,12 @@ app.MapSchedulerApi();
 
 if (options.DashboardEnabled)
 {
+    if (generatedPassword)
+        app.Logger.LogWarning("Dashboard at /hangfire is enabled with a GENERATED password (user '{User}'): {Password}  " +
+                              "Set Scheduler__DashboardPassword to choose your own. Every replica generates its own.",
+            dashboardUser, dashboardPassword);
     if (options.DashboardAuthMode == DashboardAuth.Basic)
-        app.UseDashboardBasicAuth("/hangfire", options.DashboardUsername, options.DashboardPassword);
+        app.UseDashboardBasicAuth("/hangfire", dashboardUser, dashboardPassword);
     // Auth is enforced by the middleware above (or by the operator's own proxy for Auth=None).
     app.UseHangfireDashboard("/hangfire", new DashboardOptions { Authorization = [new AllowAllDashboardFilter()] });
 }

@@ -22,6 +22,11 @@ spec:
               value: redis.default.svc:6379        # your Redis
             - name: Scheduler__Storage
               value: Redis                            # InMemory loses jobs on restart
+            # Dashboard (/hangfire) is on by default. Without a password a random one is generated and logged once.
+            # Set your own from a Secret:  kubectl create secret generic async-scheduler-dashboard --from-literal=password=...
+            - name: Scheduler__DashboardPassword
+              valueFrom:
+                secretKeyRef: { name: async-scheduler-dashboard, key: password, optional: true }
             # Secrets: mount a Secret and point at it instead of a plain value —
             # - { name: Scheduler__RedisConnectionString_FILE, value: /secrets/redis }
           readinessProbe:

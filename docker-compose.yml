@@ -19,8 +19,8 @@ services:
       Jobs__0__Cron: "*/10 * * * * *"
       Jobs__0__Url: http://echo:8080/from-config
       Jobs__0__Method: GET
-      # Operator dashboard at http://localhost:8080/hangfire (off unless enabled)
-      Scheduler__DashboardEnabled: "true"
+      # Operator dashboard at http://localhost:8080/hangfire — on by default. Remove these two lines and a random
+      # password is generated and logged instead (docker compose logs scheduler | grep GENERATED).
       Scheduler__DashboardUsername: admin
       Scheduler__DashboardPassword: change-me
     depends_on:

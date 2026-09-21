@@ -59,14 +59,22 @@ public sealed class SchedulerOptions : IValidatableObject
     /// </summary>
     public bool ReconcileConfigJobs { get; set; } = true;
 
-    /// <summary>Serve the Hangfire dashboard at <c>/hangfire</c> (failure inspection, retry, trigger, delete).</summary>
-    public bool DashboardEnabled { get; set; }
+    /// <summary>
+    /// Serve the Hangfire dashboard at <c>/hangfire</c> (failure inspection, retry, trigger, delete). On by default,
+    /// and never open: see <see cref="DashboardAuthMode"/> and <see cref="DashboardPassword"/>. Set false to remove it.
+    /// </summary>
+    public bool DashboardEnabled { get; set; } = true;
 
-    /// <summary><c>Basic</c> (default; needs username+password) or <c>None</c> (you front it with your own auth proxy).</summary>
+    /// <summary><c>Basic</c> (default) or <c>None</c> (you front it with your own auth proxy — the dashboard is then open to whoever reaches the port).</summary>
     public DashboardAuth DashboardAuthMode { get; set; } = DashboardAuth.Basic;
 
-    public string DashboardUsername { get; set; } = "";
+    /// <summary>Basic-auth user.</summary>
+    public string DashboardUsername { get; set; } = "admin";
 
+    /// <summary>
+    /// Basic-auth password. If empty, a random one is generated at startup and written once to the log, so the
+    /// out-of-the-box dashboard is never unauthenticated. Every replica generates its own; set this in real deployments.
+    /// </summary>
     public string DashboardPassword { get; set; } = "";
 
     public IEnumerable<ValidationResult> Validate(ValidationContext _)
@@ -80,10 +88,6 @@ public sealed class SchedulerOptions : IValidatableObject
                              "or a healthy in-flight callback could be re-run concurrently.", [nameof(InvisibilityTimeoutSeconds)]);
         if (!RedisPrefix.Contains("{hangfire}", StringComparison.Ordinal))
             yield return new("Scheduler:RedisPrefix must contain the literal '{hangfire}' hash tag.", [nameof(RedisPrefix)]);
-        if (DashboardEnabled && DashboardAuthMode == DashboardAuth.Basic
-            && (string.IsNullOrEmpty(DashboardUsername) || string.IsNullOrEmpty(DashboardPassword)))
-            yield return new("Dashboard enabled with Basic auth requires Scheduler:DashboardUsername and DashboardPassword " +
-                             "(or set DashboardAuthMode=None behind your own auth proxy).", [nameof(DashboardEnabled)]);
     }
 }
 

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Logging;
 
 namespace AsyncScheduler.Tests;
 
@@ -166,9 +168,11 @@ public class SchedulerApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Dashboard_is_off_by_default()
+    public async Task Dashboard_is_on_by_default_and_never_open()
     {
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/hangfire", Ct)).StatusCode);
+        var resp = await client.GetAsync("/hangfire", Ct);
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+        Assert.Contains("Basic", resp.Headers.WwwAuthenticate.ToString());
     }
 }
 
@@ -232,11 +236,72 @@ public class DashboardAndConfigTests
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(good, TestContext.Current.CancellationToken)).StatusCode);
     }
 
-    [Fact]
-    public void Enabling_the_dashboard_without_credentials_fails_startup()
+    private sealed class CaptureLogs : ILoggerProvider
     {
-        using var factory = With(("Scheduler:DashboardEnabled", "true"));
-        Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => factory.CreateClient());
+        public List<string> Lines { get; } = [];
+        public ILogger CreateLogger(string category) => new L(Lines);
+        public void Dispose() { }
+        private sealed class L(List<string> lines) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel level) => true;
+            public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> f)
+            { lock (lines) lines.Add(f(state, ex)); }
+        }
+    }
+
+    [Fact]
+    public async Task With_no_password_configured_one_is_generated_logged_once_and_works()
+    {
+        var logs = new CaptureLogs();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.ConfigureLogging(l => l.AddProvider(logs)));
+        using var client = factory.CreateClient();
+
+        string line;
+        lock (logs.Lines) line = Assert.Single(logs.Lines, x => x.Contains("GENERATED password"));
+        var password = System.Text.RegularExpressions.Regex.Match(line, @"\): (\w+)").Groups[1].Value;
+        Assert.True(password.Length >= 20, $"password not found in: {line}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/hangfire", TestContext.Current.CancellationToken)).StatusCode);
+        var good = new HttpRequestMessage(HttpMethod.Get, "/hangfire/");
+        good.Headers.Authorization = new("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{password}")));
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(good, TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_configured_password_is_used_and_nothing_is_generated_or_logged()
+    {
+        var logs = new CaptureLogs();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Scheduler:DashboardPassword", "chosen-secret-value");
+            b.ConfigureLogging(l => l.AddProvider(logs));
+        });
+        using var client = factory.CreateClient();
+        lock (logs.Lines)
+        {
+            Assert.DoesNotContain(logs.Lines, x => x.Contains("GENERATED"));
+            Assert.DoesNotContain(logs.Lines, x => x.Contains("chosen-secret-value"));
+        }
+        var good = new HttpRequestMessage(HttpMethod.Get, "/hangfire/");
+        good.Headers.Authorization = new("Basic", Convert.ToBase64String("admin:chosen-secret-value"u8.ToArray()));
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(good, TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_dashboard_can_be_switched_off()
+    {
+        await using var factory = With(("Scheduler:DashboardEnabled", "false"));
+        using var client = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/hangfire", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Auth_mode_None_leaves_authentication_to_your_own_proxy()
+    {
+        await using var factory = With(("Scheduler:DashboardAuthMode", "None"));
+        using var client = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/hangfire/", TestContext.Current.CancellationToken)).StatusCode);
     }
 
     [Fact]
