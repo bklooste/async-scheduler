@@ -51,8 +51,10 @@ The quick start uses **in-memory storage**: jobs vanish when the container resta
 SCHEDULER_STORAGE=Redis docker compose --profile redis up -d
 ```
 
-> **Status:** early (`0.x`). The API is stable, but Redis-storage reliability under failure (worker crash,
-> Redis failover) has not been formally tested yet — see [Roadmap](#roadmap) before relying on it in production.
+> **Status:** early (`0.x`). Redis and Postgres storage both pass a reliability suite (once-and-only-once across
+> replicas, worker crash, store outage, recurring across rolling restarts, fire-lag) — see
+> [spike/](spike/README.md) for what was and was not tested. Not yet exercised: real Redis Sentinel/Cluster
+> failover and long soak runs.
 
 ## API
 
@@ -117,13 +119,15 @@ wins. Invalid configuration fails at startup with a clear message in the log.
 
 | Env var | Type | Default | Description |
 |---|---|---|---|
-| `Scheduler__Storage` | `InMemory` \| `Redis` | `InMemory` | `InMemory` loses jobs on restart (quick start / tests only). `Redis` is durable. |
+| `Scheduler__Storage` | `InMemory` \| `Redis` \| `Postgres` | `InMemory` | `InMemory` loses jobs on restart (quick start / tests only). `Redis` and `Postgres` are durable. |
 | `Scheduler__RedisConnectionString` | string | _(empty)_ | Required when `Storage=Redis`. |
+| `Scheduler__PostgresConnectionString` | string | _(empty)_ | Npgsql connection string. Required when `Storage=Postgres`. |
 | `Scheduler__RedisPrefix` | string | `scheduler:{hangfire}:` | Redis key prefix. **Must contain the literal `{hangfire}`** (a hash tag, required on clustered Redis). Give each environment its own prefix if they share a Redis. |
 | `Scheduler__WorkerCount` | int | `5` | Concurrent callbacks per instance. |
 | `Scheduler__ServerTimeoutSeconds` | int | `30` | Seconds without a heartbeat before a worker is presumed dead and its jobs re-queued. |
 | `Scheduler__PollIntervalSeconds` | int | `1` | How often due jobs are picked up. Bounds fire-lag. |
 | `Scheduler__CallbackTimeoutSeconds` | int | `30` | Per-callback HTTP timeout. |
+| `Scheduler__InvisibilityTimeoutSeconds` | int | `120` | After a worker crashes mid-job, seconds before the job is re-queued and run again. Must be at least `CallbackTimeoutSeconds`+30. |
 | `Scheduler__DashboardEnabled` | bool | `false` | Serve the dashboard at `/hangfire`. |
 | `Scheduler__DashboardAuthMode` | `Basic` \| `None` | `Basic` | `Basic` needs the two settings below. `None` means you front it with your own auth proxy — never expose the dashboard unauthenticated. |
 | `Scheduler__DashboardUsername` | string | _(empty)_ | Basic-auth user. |
@@ -148,11 +152,16 @@ safe).
 
 <a id="timing"></a>
 **Timing.** This is a *durable delayed callback* service at **second** granularity: a due job fires within about
-`PollIntervalSeconds` of its time (default ≈ 1 s), plus your endpoint's latency. It is not a millisecond timer.
+`PollIntervalSeconds` of its time (default ≈ 1 s), plus your endpoint's latency (measured p99 < 1 s on Redis, see
+[spike/](spike/README.md)). It is not a millisecond timer. A failed callback is retried by Hangfire with backoff
+(first retry after roughly 15 to 45 s); a connection-level failure is first retried once immediately.
+
+**Crash recovery.** If a worker dies mid-callback, the job is re-run after `Scheduler__InvisibilityTimeoutSeconds`
+(default 120 s), so callbacks are at-least-once — keep your endpoint idempotent.
 
 ## Deployment
 
-Runs on **any Kubernetes node**; it only needs network access to Redis (if used) and to the URLs it calls.
+Runs on **any Kubernetes node**; it only needs network access to Redis or Postgres (if used) and to the URLs it calls.
 
 ```bash
 kubectl apply -f deploy/k8s/deployment.yaml
@@ -175,9 +184,7 @@ every push to `main` that passes tests publishes a new patch version. See [CHANG
 
 ## Roadmap
 
-- **Reliability spike for Redis storage** — verify a job fires once under concurrent workers, survives a worker
-  kill, survives a Redis failover, and recurring jobs don't double-fire across restarts. Until done, treat Redis
-  storage as beta. A Postgres storage option is the fallback.
+- Real Redis Sentinel/Cluster failover and long-soak testing (the [spike](spike/README.md) covers pause/restart only).
 - Reconcile config jobs on startup (remove jobs that were deleted from config).
 - Documented failure/retry runbook.
 

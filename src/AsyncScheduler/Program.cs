@@ -1,6 +1,7 @@
 using AsyncScheduler;
 using Hangfire;
 using Hangfire.InMemory;
+using Hangfire.PostgreSql;
 using Hangfire.Redis.StackExchange;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -46,7 +47,10 @@ builder.Services.AddHangfire(c =>
 {
     c.UseSimpleAssemblyNameTypeSerializer().UseRecommendedSerializerSettings();
     if (redis is not null)
-        c.UseRedisStorage(redis, new RedisStorageOptions { Prefix = options.RedisPrefix });
+        c.UseRedisStorage(redis, new RedisStorageOptions { Prefix = options.RedisPrefix, InvisibilityTimeout = TimeSpan.FromSeconds(options.InvisibilityTimeoutSeconds) });
+    else if (options.Storage == StorageKind.Postgres)
+        c.UsePostgreSqlStorage(o => o.UseNpgsqlConnection(options.PostgresConnectionString),
+            new PostgreSqlStorageOptions { InvisibilityTimeout = TimeSpan.FromSeconds(options.InvisibilityTimeoutSeconds) });
     else
         c.UseInMemoryStorage();
 });

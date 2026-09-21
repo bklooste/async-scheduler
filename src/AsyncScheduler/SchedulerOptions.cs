@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace AsyncScheduler;
 
-public enum StorageKind { InMemory, Redis }
+public enum StorageKind { InMemory, Redis, Postgres }
 
 public enum DashboardAuth { Basic, None }
 
@@ -14,11 +14,14 @@ public sealed class SchedulerOptions : IValidatableObject
 {
     public const string SectionName = "Scheduler";
 
-    /// <summary><c>InMemory</c> (default; jobs are lost on restart — quick start / tests only) or <c>Redis</c> (durable).</summary>
+    /// <summary><c>InMemory</c> (default; jobs are lost on restart — quick start / tests only), or durable <c>Redis</c> / <c>Postgres</c>.</summary>
     public StorageKind Storage { get; set; } = StorageKind.InMemory;
 
     /// <summary>Redis connection string. Required when <c>Storage=Redis</c>.</summary>
     public string RedisConnectionString { get; set; } = "";
+
+    /// <summary>Npgsql connection string. Required when <c>Storage=Postgres</c>. Hangfire creates its own schema.</summary>
+    public string PostgresConnectionString { get; set; } = "";
 
     /// <summary>
     /// Redis key prefix. MUST contain the literal <c>{hangfire}</c> hash tag (needed on clustered Redis) —
@@ -42,6 +45,14 @@ public sealed class SchedulerOptions : IValidatableObject
     [Range(1, 3600)]
     public int CallbackTimeoutSeconds { get; set; } = 30;
 
+    /// <summary>
+    /// After a worker crashes mid-job, how long (seconds) before the job is re-queued and run again. Must exceed
+    /// <see cref="CallbackTimeoutSeconds"/> plus a margin, otherwise a healthy slow job would be re-run concurrently.
+    /// Durable storages only.
+    /// </summary>
+    [Range(30, 86400)]
+    public int InvisibilityTimeoutSeconds { get; set; } = 120;
+
     /// <summary>Serve the Hangfire dashboard at <c>/hangfire</c> (failure inspection, retry, trigger, delete).</summary>
     public bool DashboardEnabled { get; set; }
 
@@ -56,6 +67,11 @@ public sealed class SchedulerOptions : IValidatableObject
     {
         if (Storage == StorageKind.Redis && string.IsNullOrWhiteSpace(RedisConnectionString))
             yield return new("Scheduler:RedisConnectionString is required when Storage=Redis.", [nameof(RedisConnectionString)]);
+        if (Storage == StorageKind.Postgres && string.IsNullOrWhiteSpace(PostgresConnectionString))
+            yield return new("Scheduler:PostgresConnectionString is required when Storage=Postgres.", [nameof(PostgresConnectionString)]);
+        if (InvisibilityTimeoutSeconds < CallbackTimeoutSeconds + 30)
+            yield return new("Scheduler:InvisibilityTimeoutSeconds must be at least CallbackTimeoutSeconds + 30, " +
+                             "or a healthy in-flight callback could be re-run concurrently.", [nameof(InvisibilityTimeoutSeconds)]);
         if (!RedisPrefix.Contains("{hangfire}", StringComparison.Ordinal))
             yield return new("Scheduler:RedisPrefix must contain the literal '{hangfire}' hash tag.", [nameof(RedisPrefix)]);
         if (DashboardEnabled && DashboardAuthMode == DashboardAuth.Basic
