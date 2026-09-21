@@ -123,7 +123,7 @@ wins. Invalid configuration fails at startup with a clear message in the log.
 | `Scheduler__Storage` | `InMemory` \| `Redis` \| `Postgres` | `InMemory` | `InMemory` loses jobs on restart (quick start / tests only). `Redis` and `Postgres` are durable. |
 | `Scheduler__RedisConnectionString` | string | _(empty)_ | Required when `Storage=Redis`. |
 | `Scheduler__PostgresConnectionString` | string | _(empty)_ | Npgsql connection string. Required when `Storage=Postgres`. |
-| `Scheduler__RedisPrefix` | string | `scheduler:{hangfire}:` | Redis key prefix. **Must contain the literal `{hangfire}`** (a hash tag, required on clustered Redis). Give each environment its own prefix if they share a Redis. |
+| `Scheduler__RedisPrefix` | string | `scheduler:{hangfire}:` | Redis key prefix. **Must contain the literal `{hangfire}`** (a hash tag, required on clustered Redis). Give each environment its own prefix if they share a Redis. Do not reuse the prefix of a different scheduler implementation: its stored jobs cannot be loaded ([runbook](docs/RUNBOOK.md#moving-from-plat-scheduler-the-old-orange-based-image)). |
 | `Scheduler__WorkerCount` | int | `5` | Concurrent callbacks per instance. |
 | `Scheduler__ServerTimeoutSeconds` | int | `30` | Seconds without a heartbeat before a worker is presumed dead and its jobs re-queued. |
 | `Scheduler__PollIntervalSeconds` | int | `1` | How often due jobs are picked up. Bounds fire-lag. |

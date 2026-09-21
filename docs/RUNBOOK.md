@@ -52,12 +52,17 @@ may be re-run.)*
 - First boot of several replicas against an **empty Postgres** logs a harmless `duplicate key … pg_namespace_nspname_index`
   from schema creation. Start one replica first to avoid the noise.
 
-## Moving from `plat-scheduler` (Redis) without draining
+## Moving from `plat-scheduler` (the old Orange-based image)
 
-Set `Scheduler__RedisPrefix` to the old key prefix, which must keep the literal `{hangfire}` hash tag, e.g.
-`prd:plat-scheduler:{hangfire}:`, and use the same Redis. Existing scheduled and recurring jobs are then picked up
-as they are. *(Untested against real `plat-scheduler` data: the storage library changed from Hangfire.Pro.Redis to an
-open-source implementation, so verify on a copy of the data first.)*
+**Do not point this image at the old image's Redis prefix expecting the jobs to carry over. They will not run.**
+Tried in a real dev cluster (2026-09-21): the new engine found the old scheduled and recurring jobs (the key layout is
+compatible), but they could not be loaded, because each stored job names the old assembly
+(`Scheduler.GenericProxy, plat-scheduler`). They failed with `JobLoadException` / `FileNotFoundException`, retried,
+and the recurring job was disabled.
+
+Use a **fresh** `Scheduler__RedisPrefix` and treat the switch as a drain: let the jobs scheduled under the old image
+fire (or re-create them through the API) before switching, because anything still pending under the old prefix is
+dropped. The `/v1/jobs/http/*` API is unchanged, so callers need no change beyond the base URL if it moves.
 
 ## Useful signals
 

@@ -25,7 +25,7 @@ public sealed class SchedulerOptions : IValidatableObject
 
     /// <summary>
     /// Redis key prefix. MUST contain the literal <c>{hangfire}</c> hash tag (needed on clustered Redis) —
-    /// deliberately not an interpolated string. Set it to your old prefix to adopt existing data without a drain.
+    /// deliberately not an interpolated string.
     /// </summary>
     public string RedisPrefix { get; set; } = "scheduler:{hangfire}:";
 
