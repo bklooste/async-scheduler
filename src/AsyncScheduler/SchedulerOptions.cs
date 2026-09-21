@@ -53,6 +53,12 @@ public sealed class SchedulerOptions : IValidatableObject
     [Range(30, 86400)]
     public int InvisibilityTimeoutSeconds { get; set; } = 120;
 
+    /// <summary>
+    /// On startup, remove recurring jobs that an earlier start registered from <c>Jobs</c> config but that are no longer
+    /// in it. Only ever touches config-registered jobs, never ones created through the API.
+    /// </summary>
+    public bool ReconcileConfigJobs { get; set; } = true;
+
     /// <summary>Serve the Hangfire dashboard at <c>/hangfire</c> (failure inspection, retry, trigger, delete).</summary>
     public bool DashboardEnabled { get; set; }
 

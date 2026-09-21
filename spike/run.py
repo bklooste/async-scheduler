@@ -12,8 +12,11 @@ results = {}
 LAST_FAILS = []
 NAMES = ["s1", "s2", "s3"][:int(os.environ.get("REPLICAS", "3"))]
 
+EXTRA = []   # extra compose files (used by the reconcile check to toggle Jobs config)
+
 def dc(*args, check=True):
-    return subprocess.run(["docker", "compose", "-f", f"{HERE}/compose.yml", "-p", f"spike-{STORAGE.lower()}", *args],
+    files = [x for f in ["compose.yml", *EXTRA] for x in ("-f", f"{HERE}/{f}")]
+    return subprocess.run(["docker", "compose", *files, "-p", f"spike-{STORAGE.lower()}", *args],
                           env={**os.environ, "STORAGE": STORAGE}, capture_output=True, text=True, check=check)
 
 def http(url, method="GET", data=None, timeout=10):
@@ -138,7 +141,26 @@ def test_c():
     out["ok"] = all(v["workers_alive"] and v["healthy_after"] and v["job_after_recovery_fired"] for k, v in out.items() if k != "ok")
     return out
 
-TESTS = dict(a=test_a, e=test_e, d=test_d, c=test_c, b=test_b)
+def test_r():
+    """(r) a job removed from Jobs config disappears on restart; an API-created recurring job survives."""
+    reset(); NAMES_ = ["s1"]
+    open(f"{HERE}/jobs.override.yml", "w").write(
+        "services:\n  s1:\n    environment:\n"
+        f"      Jobs__0__Id: cfg-r\n      Jobs__0__Cron: '*/2 * * * * *'\n      Jobs__0__Url: {DEST}/cfg-r\n      Jobs__0__Method: GET\n")
+    EXTRA.append("jobs.override.yml"); dc("stop", "s2", "s3"); dc("up", "-d", "s1"); healthy("s1")
+    api("s1", f"/v1/jobs/http/recurring?id=api-r&cron={urllib.parse.quote('*/2 * * * * *')}&destinationUrl={urllib.parse.quote(DEST + '/api-r')}")
+    fired = wait(lambda: sum(1 for c in dump() if c["path"] == "/cfg-r") >= 2, 20)
+    EXTRA.clear(); dc("up", "-d", "s1"); healthy("s1")          # recreated WITHOUT the Jobs entry
+    time.sleep(6)
+    cfg_before = sum(1 for c in dump() if c["path"] == "/cfg-r"); api_before = sum(1 for c in dump() if c["path"] == "/api-r")
+    time.sleep(8)
+    cfg_after = sum(1 for c in dump() if c["path"] == "/cfg-r"); api_after = sum(1 for c in dump() if c["path"] == "/api-r")
+    api("s1", "/v1/jobs/recurring/api-r", "DELETE", None)
+    os.remove(f"{HERE}/jobs.override.yml"); dc("start", "s2", "s3"); all_healthy(["s1", "s2", "s3"])
+    return dict(ok=bool(fired and cfg_after == cfg_before and api_after > api_before),
+                config_job_fired_before=fired, config_job_fires_after_removal=cfg_after - cfg_before, api_job_still_firing=api_after > api_before)
+
+TESTS = dict(r=test_r, a=test_a, e=test_e, d=test_d, c=test_c, b=test_b)
 
 if __name__ == "__main__":
     picked = sys.argv[1:] or list(TESTS)

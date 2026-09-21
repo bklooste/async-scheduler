@@ -88,7 +88,8 @@ if (options.DashboardEnabled)
 }
 
 ConfiguredJobs.Apply(app.Configuration, app.Services.GetRequiredService<IRecurringJobManager>(),
-    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ConfiguredJobs"));
+    app.Services.GetRequiredService<JobStorage>(),
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ConfiguredJobs"), options.ReconcileConfigJobs);
 
 app.Run();
 return 0;

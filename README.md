@@ -109,8 +109,9 @@ Jobs__0__Method: POST                          #            "Method": "POST" } ]
 - `Id` is the key: startup is an **idempotent upsert**, so redeploying never duplicates and a changed `Cron` is applied.
 - Config jobs send **no body and no headers**.
 - A malformed entry (missing field, bad URL) **fails startup** rather than being silently skipped.
-- Removing an entry from config does **not** delete the job from the store — call
-  `DELETE /v1/jobs/recurring/{id}`. (Automatic reconciliation is on the [roadmap](#roadmap).)
+- **Removing an entry from config removes the job on the next start** (`Scheduler__ReconcileConfigJobs`, default on).
+  Only jobs registered from config are tracked, so recurring jobs created through the API are never touched.
+  A job you also created through the API under the same id as a config entry is treated as config's.
 
 ## Configuration
 
@@ -128,6 +129,7 @@ wins. Invalid configuration fails at startup with a clear message in the log.
 | `Scheduler__PollIntervalSeconds` | int | `1` | How often due jobs are picked up. Bounds fire-lag. |
 | `Scheduler__CallbackTimeoutSeconds` | int | `30` | Per-callback HTTP timeout. |
 | `Scheduler__InvisibilityTimeoutSeconds` | int | `120` | After a worker crashes mid-job, seconds before the job is re-queued and run again. Must be at least `CallbackTimeoutSeconds`+30. |
+| `Scheduler__ReconcileConfigJobs` | bool | `true` | On startup, remove recurring jobs that were registered from `Jobs` config earlier but are no longer in it. Never touches jobs created through the API. |
 | `Scheduler__DashboardEnabled` | bool | `false` | Serve the dashboard at `/hangfire`. |
 | `Scheduler__DashboardAuthMode` | `Basic` \| `None` | `Basic` | `Basic` needs the two settings below. `None` means you front it with your own auth proxy — never expose the dashboard unauthenticated. |
 | `Scheduler__DashboardUsername` | string | _(empty)_ | Basic-auth user. |
@@ -141,6 +143,8 @@ wins. Invalid configuration fails at startup with a clear message in the log.
 credentials do not show in `docker inspect`. The service never logs its configuration.
 
 ## Operating it
+
+See the **[runbook](docs/RUNBOOK.md)** for failed jobs, late callbacks, crashes, store outages and upgrades.
 
 **Dashboard.** With `Scheduler__DashboardEnabled=true` you can see the job list, open a *failed* job and read its
 exception, **retry** it, trigger a recurring job now, and delete jobs. Exposing it publicly is a risk: put it behind
@@ -185,8 +189,6 @@ every push to `main` that passes tests publishes a new patch version. See [CHANG
 ## Roadmap
 
 - Real Redis Sentinel/Cluster failover and long-soak testing (the [spike](spike/README.md) covers pause/restart only).
-- Reconcile config jobs on startup (remove jobs that were deleted from config).
-- Documented failure/retry runbook.
 
 ## Licence
 

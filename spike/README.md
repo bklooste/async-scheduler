@@ -4,7 +4,7 @@ Evidence for whether Redis (and Postgres) storage is safe to run this scheduler 
 
 ```bash
 STORAGE=Redis    python3 spike/run.py          # all checks, ~7 min
-STORAGE=Postgres python3 spike/run.py e d      # or pick checks: a b c d e
+STORAGE=Postgres python3 spike/run.py e d      # or pick checks: a b c d e r
 REPLICAS=1 STORAGE=Redis python3 spike/run.py e
 ```
 
@@ -17,6 +17,7 @@ and writes `results-<storage>.json`.
 | b | **worker crash re-runs the job** | `kill -9` the only worker mid-job; the job must run again |
 | c | **store outage doesn't kill workers** | pause the store 15 s, then restart it, mid-job; workers must stay up, recover, and run new jobs |
 | d | recurring jobs **don't double-fire** across restarts | a 2 s recurring job while every replica is restarted in turn; no 2 s slot may have two calls |
+| r | **config reconcile** | run a job from `Jobs` config, restart without it: it stops; an API-created recurring job keeps firing |
 | e | **fire-lag** | 200 jobs scheduled at known instants; seconds between due time and arrival |
 
 `kill -9` and pause/restart are the closest a single-host stack gets to a crash and a failover. A real Redis
@@ -47,6 +48,7 @@ Sentinel/Cluster failover is **not** exercised.
 | b. worker `kill -9` mid-job re-runs it | PASS: re-ran 121 s after kill (`InvisibilityTimeoutSeconds=120`) | PASS: re-ran 121 s after kill |
 | c. store paused 15 s / restarted mid-job | PASS: workers up, recovered, new job fired, in-flight job ran once | PASS: same |
 | d. recurring, rolling restart of all replicas | PASS: 0 double-fired, 0 missed slots | PASS: 0 double-fired, 0 missed slots |
+| r. config job removed → removed on restart; API job survives | PASS | PASS |
 | e. fire-lag, 200 jobs (p50 / p99 / max) | 12 back-to-back runs: p99 0.2 to 0.82 s, none over 5 s late | 1 run: -0.13 / 0.92 / 0.93 s |
 
 Negative p50 is real: Hangfire stores due times at whole-second resolution, so jobs can fire up to about a second early.
