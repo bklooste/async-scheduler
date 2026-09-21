@@ -1,0 +1,18 @@
+## .NET
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+*.dll
+*.pdb
+
+## Rider / VS
+.idea/
+
+## OS
+.DS_Store
+Thumbs.db
+TestResults/
+nupkgs/
+sbom*.json

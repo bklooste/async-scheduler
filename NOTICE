@@ -1,0 +1,10 @@
+async-scheduler
+Copyright (c) 2026 Ben Kloosterman — MIT (see LICENSE)
+
+Third-party software in the published image
+-------------------------------------------
+Generated from the release SBOM (sbom.spdx.json attached to each GitHub release) so it cannot drift.
+Copyleft (LGPL/GPL) dependencies are permitted and recorded here for transparency. Commercial or
+licence-required packages must never be a shipped default.
+
+<!-- replace with the generated inventory: name, version, licence -->

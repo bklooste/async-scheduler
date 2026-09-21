@@ -1,0 +1,48 @@
+# Node-agnostic on purpose: no nodeSelector, no affinity, no tolerations. The pod runs on any node
+# that can reach its dependencies over the network. Redis is an external endpoint, not a node pin.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: async-scheduler
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: async-scheduler }
+  template:
+    metadata:
+      labels: { app: async-scheduler }
+    spec:
+      containers:
+        - name: service
+          image: ghcr.io/bklooste/async-scheduler/service:1.0   # pin an explicit version
+          ports:
+            - containerPort: 8080
+          env:
+            - name: Service__RedisConnectionString
+              value: redis.default.svc:6379        # your Redis
+            - name: Service__KeyPrefix
+              value: example
+            # Secrets: mount a Secret and point at it instead of a plain value —
+            # - { name: Service__RedisConnectionString_FILE, value: /secrets/redis }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: async-scheduler
+spec:
+  selector: { app: async-scheduler }
+  ports:
+    - port: 80
+      targetPort: 8080

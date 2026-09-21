@@ -1,0 +1,23 @@
+# Quick start:  docker compose up
+# Runs the service plus the external dependency it needs. Redis is a *network* dependency of the
+# service, not something it ships — point Service__RedisConnectionString at your own Redis in production.
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  service:
+    image: ghcr.io/bklooste/async-scheduler/service:latest
+    # build: .          # uncomment to build from source instead of pulling
+    ports:
+      - "8080:8080"
+    environment:
+      Service__RedisConnectionString: redis:6379
+      Service__KeyPrefix: example
+      # OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+    depends_on:
+      redis:
+        condition: service_healthy
