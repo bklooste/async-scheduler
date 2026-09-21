@@ -13,7 +13,7 @@ public static class SchedulerApi
         {
             if (!IsHttpUrl(HttpUtility.UrlDecode(destinationUrl))) return BadUrl();
             var call = await ReadCall(request, HttpUtility.UrlDecode(destinationUrl), method);
-            return Results.Ok(jobs.Schedule<HttpCallbackSender>(s => s.Send(call, default), new DateTimeOffset(scheduledTime)));
+            return Results.Ok(jobs.Schedule<HttpCallbackSender>(s => s.Send(call, default), CeilToSecond(new DateTimeOffset(scheduledTime))));
         })
         .Produces<string>().WithName("ScheduleJobV1").WithTags("Scheduler-V1");
 
@@ -24,7 +24,7 @@ public static class SchedulerApi
             var call = await ReadCall(request, HttpUtility.UrlDecode(destinationUrl), method);
             return Results.Ok(delay is null
                 ? jobs.Enqueue<HttpCallbackSender>(s => s.Send(call, default))
-                : jobs.Schedule<HttpCallbackSender>(s => s.Send(call, default), TimeSpan.FromSeconds(delay.Value)));
+                : jobs.Schedule<HttpCallbackSender>(s => s.Send(call, default), CeilToSecond(DateTimeOffset.UtcNow.AddSeconds(delay.Value))));
         })
         .Produces<string>().WithName("EnqueueJobV1").WithTags("Scheduler-V1");
 
@@ -60,6 +60,13 @@ public static class SchedulerApi
         await request.Body.CopyToAsync(ms);
         return new ApiCall(ms.Length == 0 ? null : ms.ToArray(), url, request.Headers.ToDictionary(h => h.Key, h => h.Value.Select(v => v ?? "").ToArray()), method);
     }
+
+    /// <summary>
+    /// Storage keeps due times in whole seconds and truncates, so a job due at 12:00:03.7 would fire at 12:00:03.0 —
+    /// up to a second EARLY. A delayed callback must never run before its time, so round the due time UP instead.
+    /// </summary>
+    internal static DateTimeOffset CeilToSecond(DateTimeOffset t) =>
+        new(t.UtcTicks + (TimeSpan.TicksPerSecond - t.UtcTicks % TimeSpan.TicksPerSecond) % TimeSpan.TicksPerSecond, TimeSpan.Zero);
 
     private static bool IsHttpUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps);

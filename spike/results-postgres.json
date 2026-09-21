@@ -1,12 +1,24 @@
 {
   "storage": "Postgres",
   "results": {
-    "r": {
+    "e": {
       "ok": true,
-      "config_job_fired_before": true,
-      "config_job_fires_after_removal": 0,
-      "api_job_still_firing": true,
-      "seconds": 22
+      "arrived": 200,
+      "min_s": 0.23,
+      "p50_s": 1.07,
+      "p99_s": 2.01,
+      "max_s": 2.04,
+      "api_max_s": 0.02,
+      "api_total_s": 1.4,
+      "api_non200": 0,
+      "late_jobs_over_5s": 0,
+      "sched_failure_log": [
+        "Npgsql.PostgresException (0x80004005): 23505: duplicate key value violates unique constraint \"pg_namespace_nspname_index\"",
+        "Exception data:",
+        "Npgsql.PostgresException (0x80004005): 42701: column \"updatecount\" of relation \"counter\" already exists",
+        "Exception data:"
+      ],
+      "seconds": 16
     }
   }
 }

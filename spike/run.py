@@ -85,7 +85,7 @@ def test_e():
     logs = dc("logs", "--no-color", *NAMES).stdout
     LAST_FAILS = [l.split("|", 1)[-1].strip()[:220] for l in logs.splitlines() if "failed" in l.lower() or "exception" in l.lower()][:4]
     if not lags: return dict(ok=False, error="no callbacks")
-    return dict(ok=len(lags) == n, arrived=len(lags), p50_s=round(pct(lags, .5), 2), p99_s=round(pct(lags, .99), 2), max_s=round(max(lags), 2),
+    return dict(ok=len(lags) == n and min(lags) >= 0, arrived=len(lags), min_s=round(min(lags), 2), p50_s=round(pct(lags, .5), 2), p99_s=round(pct(lags, .99), 2), max_s=round(max(lags), 2),
                 api_max_s=round(max(api_s), 2), api_total_s=round(sum(api_s), 1), api_non200=api_bad,
                 late_jobs_over_5s=sum(1 for l in lags if l > 5), sched_failure_log=LAST_FAILS)
 

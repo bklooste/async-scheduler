@@ -155,9 +155,11 @@ each job runs on one of them. Every replica applies the `Jobs` config at startup
 safe).
 
 <a id="timing"></a>
-**Timing.** This is a *durable delayed callback* service at **second** granularity: a due job fires within about
-`PollIntervalSeconds` of its time (default ≈ 1 s), plus your endpoint's latency (measured p99 < 1 s on Redis, see
-[spike/](spike/README.md)). It is not a millisecond timer. A failed callback is retried by Hangfire with backoff
+**Timing.** This is a *durable delayed callback* service at **second** granularity. A job **never fires before its
+due time**: due times are rounded *up* to a whole second (storage keeps whole seconds and would otherwise truncate,
+firing up to a second early). It then fires within about `PollIntervalSeconds` after that, so expect **0 to ~2 s late**
+(measured p50 ≈ 1 s, p99 ≈ 2 s on Redis and Postgres, see [spike/](spike/README.md)), plus your endpoint's latency.
+It is not a millisecond timer. A failed callback is retried by Hangfire with backoff
 (first retry after roughly 15 to 45 s); a connection-level failure is first retried once immediately.
 
 **Crash recovery.** If a worker dies mid-callback, the job is re-run after `Scheduler__InvisibilityTimeoutSeconds`

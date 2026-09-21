@@ -34,7 +34,11 @@ Sentinel/Cluster failover is **not** exercised.
    delivered it late. The sender now retries once immediately on a connection-level failure (no response received).
    After that change: 12 of 12 runs with no job more than 5 s late. (The receiver's HTTP/1.0 close-per-request is
    the worst case for this race, but real servers hit it too.)
-3. **Fire-lag** is bounded by `PollIntervalSeconds` (1 s). It is second-granularity by design, not a millisecond timer.
+3. **Jobs fired up to ~1 s early** (found by lode's bet integration test, not by this spike, which had shown a negative
+   p50 and dismissed it). Storage keeps due times in whole seconds and truncates, so a job due at `:03.7` ran at `:03.0`.
+   Due times are now rounded **up** to a whole second: minimum lag is now ≥ 0 on both stores, at the cost of higher lag
+   (Redis p50 0.1 s → ~1 s, p99 <1 s → ~2 s). Covered by unit tests (`never_fires_before`) and check `e` (`ok` now requires `min_s >= 0`).
+   Fire-lag is second-granularity by design, not a millisecond timer.
 4. **Concurrent first boot on an empty Postgres is noisy.** Three replicas started at once race to create the
    schema; one or two log `fail: Hangfire.PostgreSql ... duplicate key ... pg_namespace_nspname_index`. All replicas
    stay up and healthy and the schema ends up correct, so it is cosmetic, but start one replica first (or accept
@@ -49,12 +53,10 @@ Sentinel/Cluster failover is **not** exercised.
 | c. store paused 15 s / restarted mid-job | PASS: workers up, recovered, new job fired, in-flight job ran once | PASS: same |
 | d. recurring, rolling restart of all replicas | PASS: 0 double-fired, 0 missed slots | PASS: 0 double-fired, 0 missed slots |
 | r. config job removed → removed on restart; API job survives | PASS | PASS |
-| e. fire-lag, 200 jobs (p50 / p99 / max) | 12 back-to-back runs: p99 0.2 to 0.82 s, none over 5 s late | 1 run: -0.13 / 0.92 / 0.93 s |
+| e. fire-lag, 200 jobs, **never early** (after the round-up fix; p50 / p99) | 3 runs: min 0.03 to 0.26 s, p50 0.7 to 1.2 s, p99 1.3 to 2.0 s | 3 runs: min 0.23 to 0.37 s, p50 1.1 to 1.3 s, p99 2.0 to 2.1 s |
 
-Negative p50 is real: Hangfire stores due times at whole-second resolution, so jobs can fire up to about a second early.
-Redis fire-lag was measured many times; **Postgres only once on the final code** (eight runs earlier, before the
-connection-retry fix, showed p99 0.85 to 2.6 s with one 42 s outlier from the stale-connection issue above), so treat
-the Postgres number as indicative.
+Before the round-up fix the p50 was slightly negative (jobs fired early); see finding 3.
+The other four checks (a to d, r) were last run **before** the round-up change; it only alters how due times are stored, but they were not re-run.
 
 ## Not covered
 

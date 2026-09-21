@@ -76,6 +76,41 @@ public class SchedulerApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_delayed_job_never_fires_before_its_due_time()
+    {
+        // Storage keeps due times in whole seconds; a job due at 12:00:03.7 used to fire at 12:00:03.0.
+        // Stagger the posts so the sub-second offsets differ, then require every callback to be at/after post + delay.
+        var posted = new Dictionary<string, DateTimeOffset>();
+        for (var i = 0; i < 8; i++)
+        {
+            posted[$"/early/{i}"] = DateTimeOffset.UtcNow;
+            await client.PostAsync($"/v1/jobs/http/enqueue?delay=2&destinationUrl={Dest($"/early/{i}")}", Json("{}"), Ct);
+            await Task.Delay(130, Ct);
+        }
+        Assert.True(await Receiver.WaitFor(() => receiver.Calls.Count(c => c.Path.StartsWith("/early/")) >= 8, Patience));
+
+        var early = receiver.Calls.Where(c => posted.ContainsKey(c.Path))
+            .Where(c => c.At < posted[c.Path].AddSeconds(2))
+            .Select(c => $"{c.Path} fired {(posted[c.Path].AddSeconds(2) - c.At).TotalMilliseconds:F0} ms early").ToList();
+        Assert.True(early.Count == 0, string.Join("; ", early));
+    }
+
+    [Fact]
+    public async Task A_job_scheduled_for_a_time_never_fires_before_it()
+    {
+        var results = new List<string>();
+        for (var i = 0; i < 6; i++)
+        {
+            var due = DateTimeOffset.UtcNow.AddSeconds(2).AddMilliseconds(i * 170 + 40);
+            await client.PostAsync($"/v1/jobs/http/schedule?scheduledTime={Uri.EscapeDataString(due.UtcDateTime.ToString("o"))}&destinationUrl={Dest($"/at/{i}")}", Json("{}"), Ct);
+            Assert.True(await Receiver.WaitFor(() => receiver.To($"/at/{i}").Any(), Patience));
+            var arrived = receiver.To($"/at/{i}").Single().At;
+            if (arrived < due) results.Add($"/at/{i} fired {(due - arrived).TotalMilliseconds:F0} ms early");
+        }
+        Assert.True(results.Count == 0, string.Join("; ", results));
+    }
+
+    [Fact]
     public async Task Schedule_fires_at_the_given_time()
     {
         var at = DateTime.UtcNow.AddSeconds(3).ToString("o");

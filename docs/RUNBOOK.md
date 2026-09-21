@@ -21,7 +21,7 @@ Without the dashboard: `DELETE /v1/jobs/background/{id}` cancels a queued/schedu
 
 ## A callback arrived late
 
-- **Normal lateness** is up to `Scheduler__PollIntervalSeconds` (default 1 s) plus your endpoint's latency.
+- **Normal lateness** is 0 to about 2 s: due times are rounded up to a whole second (a job never fires *early*), then picked up within `Scheduler__PollIntervalSeconds` (default 1 s), plus your endpoint's latency.
 - **15 to 45 s late** almost always means the first attempt failed and was retried on Hangfire's first backoff.
   Look at the job's history in the dashboard. A connection-level failure is already retried once immediately;
   a non-2xx response or timeout is not.

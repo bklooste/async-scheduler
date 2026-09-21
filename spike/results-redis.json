@@ -1,12 +1,24 @@
 {
   "storage": "Redis",
   "results": {
-    "r": {
+    "e": {
       "ok": true,
-      "config_job_fired_before": true,
-      "config_job_fires_after_removal": 0,
-      "api_job_still_firing": true,
-      "seconds": 21
+      "arrived": 200,
+      "min_s": 0.26,
+      "p50_s": 1.16,
+      "p99_s": 1.98,
+      "max_s": 2.0,
+      "api_max_s": 0.0,
+      "api_total_s": 0.3,
+      "api_non200": 0,
+      "late_jobs_over_5s": 0,
+      "sched_failure_log": [
+        "HTTP request failed after 6.1614ms",
+        "System.Net.Http.HttpRequestException: An error occurred while sending the request.",
+        "---> System.Net.Http.HttpIOException: The response ended prematurely. (ResponseEnded)",
+        "--- End of inner exception stack trace ---"
+      ],
+      "seconds": 16
     }
   }
 }
