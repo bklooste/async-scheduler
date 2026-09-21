@@ -1,23 +1,41 @@
 # Quick start:  docker compose up
-# Runs the service plus the external dependency it needs. Redis is a *network* dependency of the
-# service, not something it ships — point Service__RedisConnectionString at your own Redis in production.
+#
+#   scheduler  the service itself, in-memory storage (jobs vanish on restart — fine to try it out)
+#   echo       a stand-in "your app": prints every HTTP request it receives, so you can SEE callbacks arrive
+#
+# For durable jobs, run with Redis:   docker compose --profile redis up
 services:
-  redis:
-    image: redis:7-alpine
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      retries: 10
-
-  service:
+  scheduler:
     image: ghcr.io/bklooste/async-scheduler/service:latest
     # build: .          # uncomment to build from source instead of pulling
     ports:
       - "8080:8080"
     environment:
-      Service__RedisConnectionString: redis:6379
-      Service__KeyPrefix: example
-      # OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+      # Redis mode (used with --profile redis); the default is in-memory
+      Scheduler__Storage: ${SCHEDULER_STORAGE:-InMemory}
+      Scheduler__RedisConnectionString: redis:6379
+      # Declarative recurring job, applied at startup: hits the echo container every 10 seconds.
+      Jobs__0__Id: hello-every-10s
+      Jobs__0__Cron: "*/10 * * * * *"
+      Jobs__0__Url: http://echo:8080/from-config
+      Jobs__0__Method: GET
+      # Operator dashboard at http://localhost:8080/hangfire (off unless enabled)
+      Scheduler__DashboardEnabled: "true"
+      Scheduler__DashboardUsername: admin
+      Scheduler__DashboardPassword: change-me
     depends_on:
-      redis:
-        condition: service_healthy
+      - echo
+
+  echo:
+    image: mendhak/http-https-echo:37
+    environment:
+      HTTP_PORT: 8080
+      LOG_IGNORE_PATH: /health
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10

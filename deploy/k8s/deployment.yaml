@@ -18,12 +18,12 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: Service__RedisConnectionString
+            - name: Scheduler__RedisConnectionString
               value: redis.default.svc:6379        # your Redis
-            - name: Service__KeyPrefix
-              value: example
+            - name: Scheduler__Storage
+              value: Redis                            # InMemory loses jobs on restart
             # Secrets: mount a Secret and point at it instead of a plain value —
-            # - { name: Service__RedisConnectionString_FILE, value: /secrets/redis }
+            # - { name: Scheduler__RedisConnectionString_FILE, value: /secrets/redis }
           readinessProbe:
             httpGet: { path: /health, port: 8080 }
           livenessProbe:

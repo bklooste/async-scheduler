@@ -1,0 +1,75 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace AsyncScheduler;
+
+public enum StorageKind { InMemory, Redis }
+
+public enum DashboardAuth { Basic, None }
+
+/// <summary>
+/// The service's configuration surface. Every property must appear in the README config table under its
+/// env var name (<c>Scheduler__PropertyName</c>) — <c>ReadmeConfigTableTests</c> enforces it.
+/// </summary>
+public sealed class SchedulerOptions : IValidatableObject
+{
+    public const string SectionName = "Scheduler";
+
+    /// <summary><c>InMemory</c> (default; jobs are lost on restart — quick start / tests only) or <c>Redis</c> (durable).</summary>
+    public StorageKind Storage { get; set; } = StorageKind.InMemory;
+
+    /// <summary>Redis connection string. Required when <c>Storage=Redis</c>.</summary>
+    public string RedisConnectionString { get; set; } = "";
+
+    /// <summary>
+    /// Redis key prefix. MUST contain the literal <c>{hangfire}</c> hash tag (needed on clustered Redis) —
+    /// deliberately not an interpolated string. Set it to your old prefix to adopt existing data without a drain.
+    /// </summary>
+    public string RedisPrefix { get; set; } = "scheduler:{hangfire}:";
+
+    /// <summary>Concurrent job executions per instance.</summary>
+    [Range(1, 1000)]
+    public int WorkerCount { get; set; } = 5;
+
+    /// <summary>Seconds without a heartbeat before a worker is considered dead and its jobs are re-queued.</summary>
+    [Range(5, 3600)]
+    public int ServerTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>How often (seconds) due scheduled/recurring jobs are picked up. Bounds fire-lag.</summary>
+    [Range(1, 300)]
+    public int PollIntervalSeconds { get; set; } = 1;
+
+    /// <summary>Per-callback HTTP timeout in seconds.</summary>
+    [Range(1, 3600)]
+    public int CallbackTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Serve the Hangfire dashboard at <c>/hangfire</c> (failure inspection, retry, trigger, delete).</summary>
+    public bool DashboardEnabled { get; set; }
+
+    /// <summary><c>Basic</c> (default; needs username+password) or <c>None</c> (you front it with your own auth proxy).</summary>
+    public DashboardAuth DashboardAuthMode { get; set; } = DashboardAuth.Basic;
+
+    public string DashboardUsername { get; set; } = "";
+
+    public string DashboardPassword { get; set; } = "";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext _)
+    {
+        if (Storage == StorageKind.Redis && string.IsNullOrWhiteSpace(RedisConnectionString))
+            yield return new("Scheduler:RedisConnectionString is required when Storage=Redis.", [nameof(RedisConnectionString)]);
+        if (!RedisPrefix.Contains("{hangfire}", StringComparison.Ordinal))
+            yield return new("Scheduler:RedisPrefix must contain the literal '{hangfire}' hash tag.", [nameof(RedisPrefix)]);
+        if (DashboardEnabled && DashboardAuthMode == DashboardAuth.Basic
+            && (string.IsNullOrEmpty(DashboardUsername) || string.IsNullOrEmpty(DashboardPassword)))
+            yield return new("Dashboard enabled with Basic auth requires Scheduler:DashboardUsername and DashboardPassword " +
+                             "(or set DashboardAuthMode=None behind your own auth proxy).", [nameof(DashboardEnabled)]);
+    }
+}
+
+/// <summary>One entry of the declarative top-level <c>Jobs</c> array: a recurring job upserted at startup.</summary>
+public sealed class JobConfig
+{
+    [Required] public string Id { get; set; } = "";
+    [Required] public string Cron { get; set; } = "";
+    [Required] public string Url { get; set; } = "";
+    public string Method { get; set; } = "POST";
+}

@@ -11,8 +11,8 @@ public class ReadmeConfigTableTests
         Assert.NotNull(dir);
         var readme = File.ReadAllText(Path.Combine(dir!.FullName, "README.md"));
 
-        var missing = typeof(ServiceOptions).GetProperties()
-            .Select(p => $"{ServiceOptions.SectionName}__{p.Name}")
+        var missing = typeof(SchedulerOptions).GetProperties()
+            .Select(p => $"{SchedulerOptions.SectionName}__{p.Name}")
             .Where(env => !readme.Contains($"`{env}`"))
             .ToList();
 
