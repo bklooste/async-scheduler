@@ -19,13 +19,22 @@ optional **operator dashboard** for seeing why a job failed and retrying it.
 
 ## Quick start
 
+One command, no clone and no build — the image is public on GHCR:
+
 ```bash
-git clone https://github.com/bklooste/async-scheduler && cd async-scheduler
+docker run -d --name scheduler -p 8080:8080 ghcr.io/bklooste/async-scheduler/service:latest
+```
+
+For the full demo (an `echo` container standing in for *your app*, plus a declarative job), grab the compose file:
+
+```bash
+curl -O https://raw.githubusercontent.com/bklooste/async-scheduler/main/docker-compose.yml
 docker compose up -d
 ```
 
-That starts the scheduler and an `echo` container that stands in for *your app* — it prints every request it
-receives. Now schedule some calls:
+That starts the scheduler and an `echo` container that prints every request it receives.
+
+Now schedule some calls:
 
 ```bash
 # Call http://echo:8080/hello right now, with a JSON body and a header
