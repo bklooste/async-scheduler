@@ -7,7 +7,10 @@ What to do when something looks wrong. Everything here was exercised against the
 
 1. Open `/hangfire` (on by default; user `admin`). If you did not set `Scheduler__DashboardPassword`, the password was generated at startup and logged once: `kubectl logs <pod> | grep GENERATED` (each replica has its own). Set the password from a Secret for anything long-lived.
 2. **Retries** lists jobs whose callback failed and are waiting for the next automatic attempt. **Failed** lists
-   jobs that ran out of attempts (Hangfire's default is 10 attempts with growing backoff).
+   jobs that ran out of attempts (Hangfire's default is 10 *retries*, so up to 11 calls, with growing backoff;
+   see [Hangfire behaviour](#hangfire-behaviour-read-from-source)). Kept-result jobs (`keepResult=true`) never reach
+   **Failed** for an HTTP outcome: after `attempts` (default 3) the last outcome is stored and the job is *Succeeded*.
+   Read the outcome with `GET /v1/jobs/{jobKey}/result`.
 3. Open the job: the detail page shows the **exception** (e.g. `HttpRequestException: Name or service not known`
    or `Callback POST http://… failed: 500`), the full state history and the job's arguments (URL, method).
 4. **Requeue** runs it again now. **Delete** drops it. On a recurring job (**Recurring Jobs** tab) **Trigger now**
@@ -63,6 +66,39 @@ and the recurring job was disabled.
 Use a **fresh** `Scheduler__RedisPrefix` and treat the switch as a drain: let the jobs scheduled under the old image
 fire (or re-create them through the API) before switching, because anything still pending under the old prefix is
 dropped. The `/v1/jobs/http/*` API is unchanged, so callers need no change beyond the base URL if it moves.
+
+## A result read returns 202 for too long, or 404
+
+- `202` with `"state":"Enqueued"` for long: the pool is full. Default-queue jobs use `Scheduler__WorkerCount`
+  workers, `queue=async` jobs `Scheduler__AsyncWorkerCount`. Check the dashboard **Servers** page (two servers per
+  replica, `<host>:default` and `<host>:async`) and **Processing**.
+- `"state":"Retrying"`: the target answered `5xx`, timed out or refused the connection; see the job's history.
+- `404`: the key is unknown, or `userId` is not the job's `owner` (the two are deliberately indistinguishable), or
+  the result outlived `resultTtl`. A key without a result expires after a day.
+- Results are hashes in the job store: on Redis, `<RedisPrefix>async-scheduler:job-key:<jobKey>` with a TTL.
+
+## Hangfire behaviour, read from source
+
+Read on 2026-11-05 from the packages this image ships (`Hangfire.Core` 1.8.25,
+`Fork.Hangfire.Redis.StackExchange.Enhanced` 2.0.3), decompiled.
+
+- **Default retry count: 10 retries, so up to 11 calls.** `AutomaticRetryAttribute.DefaultRetryAttempts = 10`, and a
+  failure is rescheduled while `RetryCount + 1 <= Attempts`. Delay before retry *n* is `(n-1)^4 + 15 + rand(0..29)*n`
+  seconds (so 15-44 s, then 16-74 s, ...). Kept-result jobs override this on their job method: delays 1, 2, 5, 10,
+  30 s, and they stop at `attempts` themselves.
+- **A job still running at `InvisibilityTimeout` IS re-queued (Redis storage).** Fetching a job writes a `Fetched`
+  timestamp on the job hash once (`RedisConnection.FetchNextJob`); nothing extends it while the job runs. The
+  `FetchedJobsWatcher` re-queues any dequeued job whose `Fetched` is older than `InvisibilityTimeout`
+  (`TimedOutByFetchedTime`, reason "InvisibilityTimeout"), whether or not its server is alive. So a call that runs
+  longer than `Scheduler__InvisibilityTimeoutSeconds` is started a second time while the first is still running. That
+  is why `CallbackTimeoutSeconds` must stay 30 s under it (enforced at startup) and a per-job `timeout` 10 s under it
+  (enforced at enqueue). The storage has a `SkipRequeueOnTimeout` option; this image does not set it.
+- **Retention.** Succeeded and deleted jobs expire after `JobStorage.JobExpirationTimeout`, 1 day by default; failed
+  jobs are kept until deleted. The Redis storage also trims its succeeded and deleted lists to 499 entries (dashboard
+  lists only). Kept results do not depend on either: they live in their own hashes for `resultTtl`.
+
+**Not verified:** the same behaviour for the Postgres and in-memory storages (only their support for per-job queues and
+hash expiry was checked); a real Redis Sentinel/Cluster failover.
 
 ## Useful signals
 

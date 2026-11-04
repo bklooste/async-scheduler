@@ -33,6 +33,21 @@ public sealed class SchedulerOptions : IValidatableObject
     [Range(1, 1000)]
     public int WorkerCount { get; set; } = 5;
 
+    /// <summary>
+    /// Concurrent job executions per instance for the <c>async</c> queue (<c>enqueue?queue=async</c>). A separate pool,
+    /// so long calls cannot hold the <see cref="WorkerCount"/> workers that delayed callbacks need.
+    /// </summary>
+    [Range(1, 1000)]
+    public int AsyncWorkerCount { get; set; } = 10;
+
+    /// <summary>Largest response body kept for a <c>keepResult</c> job. A larger one is stored as the failure <c>ResultTooLarge</c>.</summary>
+    [Range(1024, 64 * 1024 * 1024)]
+    public int MaxResultBytes { get; set; } = 1024 * 1024;
+
+    /// <summary>Upper bound on <c>wait</c> when reading a result (<c>GET /v1/jobs/{jobKey}/result?wait=</c>).</summary>
+    [Range(0, 3600)]
+    public int MaxWaitSeconds { get; set; } = 50;
+
     /// <summary>Seconds without a heartbeat before a worker is considered dead and its jobs are re-queued.</summary>
     [Range(5, 3600)]
     public int ServerTimeoutSeconds { get; set; } = 30;
