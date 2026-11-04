@@ -8,8 +8,9 @@ A small HTTP service that **calls your URLs back later**. Two things it is good 
 
 1. **Durable delayed callbacks** — "POST this to `https://my-app/expire` in 30 seconds" (or at a time, or on a cron).
    The job is stored, survives restarts (with Redis), and is retried if your endpoint fails.
-2. **Async HTTP for sync callers** — hand a long-running job to the scheduler, get a job id back
-   immediately, and let the scheduler make the call. The caller's connection is never held open.
+2. **Async HTTP for sync callers** — hand a long-running job to the scheduler under your own key, get it back
+   immediately, and let the scheduler make the call. The caller's connection is never held open; it reads the
+   target's response later, or waits a bounded time for it ([Kept results](#kept-results)).
 
 It is a thin, self-contained host around [Hangfire](https://www.hangfire.io/). Second granularity, not
 milliseconds — see [Timing](#timing).
@@ -74,11 +75,12 @@ All job endpoints take the **destination as a query parameter** and forward the 
 
 | Method | Path | Query | Description |
 |---|---|---|---|
-| `POST` | `/v1/jobs/http/enqueue` | `destinationUrl`, `delay`? (seconds), `method`? | Run now, or after `delay` seconds. |
+| `POST` | `/v1/jobs/http/enqueue` | `destinationUrl`, `delay`? (seconds), `method`?, and the [kept-result parameters](#kept-results) | Run now, or after `delay` seconds. |
 | `POST` | `/v1/jobs/http/schedule` | `destinationUrl`, `scheduledTime` (ISO 8601), `method`? | Run at a specific time. |
 | `POST` | `/v1/jobs/http/recurring` | `destinationUrl`, `cron`, `name`?, `id`?, `method`? | Create/update a recurring job. Id is `{name}-{id}`; omit `id` for a random one. Re-posting the same id updates it. |
 | `DELETE` | `/v1/jobs/background/{jobId}` | | Cancel a queued/scheduled job. `200`, or `404` if unknown. |
 | `DELETE` | `/v1/jobs/recurring/{id}` | | Remove a recurring job. `200` even if it did not exist. |
+| `GET` | `/v1/jobs/{jobKey}/result` | `userId`?, `wait`? (seconds) | The outcome of a job enqueued with `jobKey` ([below](#kept-results)). |
 | `GET` | `/health` | | `200` when healthy. |
 
 `destinationUrl` must be an absolute `http(s)` URL (otherwise `400`). Cron uses standard 5 fields, or 6 with a
@@ -97,12 +99,60 @@ curl -X POST "localhost:8080/v1/jobs/http/schedule?scheduledTime=2026-12-01T09:0
 curl -X DELETE localhost:8080/v1/jobs/background/3
 ```
 
+**Content type.** The callback carries the `Content-Type` the job was submitted with. With none, a body is sent as
+`application/json` (before 0.3 every body was sent as `application/json`).
+
 **Callback behaviour.** A `2xx` marks the job done. Any other status, or a network error, fails the attempt and
 Hangfire retries with backoff. **`404` is treated as done** (the target is gone; retrying won't help) — it is
 logged, not retried. Each attempt times out after `Scheduler__CallbackTimeoutSeconds`.
 
 Delivery is **at-least-once**: a callback can arrive twice (e.g. a worker dies after your endpoint replied).
 Make your endpoint idempotent.
+
+<a id="kept-results"></a>
+### Kept results, job keys and the `async` queue
+
+Extra `enqueue` parameters, all optional. Without them `enqueue` behaves exactly as before.
+
+| Query | Default | Meaning |
+|---|---|---|
+| `jobKey` | | Your key for the job: 1-128 of `A-Z a-z 0-9 . _ ~ -`. A repeat with the same key returns the existing job's id and creates nothing (dedupe), until the key expires. |
+| `owner` | _(empty)_ | Opaque owner, stored with the job. Needs `jobKey`. |
+| `keepResult` | `false` | Store the outcome under `jobKey`. Needs `jobKey`. |
+| `resultTtl` | `3600` | Seconds the outcome is kept, 1-86400. Needs `keepResult`. |
+| `attempts` | `3` | Total attempts, 1-10. Needs `keepResult`. |
+| `timeout` | `Scheduler__CallbackTimeoutSeconds` | Per-job HTTP timeout in seconds. At most `CallbackTimeoutSeconds`, and at least 10 s under `InvisibilityTimeoutSeconds` (a job still running at the invisibility timeout is started again). Otherwise `400`. |
+| `queue` | `default` | `async` runs the job on its own worker pool (`Scheduler__AsyncWorkerCount`), so long calls cannot hold the workers delayed callbacks need. |
+
+**Final outcomes of a kept-result job.** `2xx` and `4xx` are final. A `5xx`, a connection error or a timeout is
+retried (after about 1, 2, 5, 10, 30 s) until `attempts` attempts have been made, and the last outcome is stored.
+A response body over `Scheduler__MaxResultBytes` is stored as the failure `ResultTooLarge`. The stored outcome is
+`{status, contentType, body}`. Once it is stored the job shows as *Succeeded* in the dashboard, whatever the target
+answered: the outcome is the answer. A key without a result lives for a day; the stored outcome for `resultTtl`.
+
+**Reading it:** `GET /v1/jobs/{jobKey}/result?userId=<owner>&wait=<s>`.
+
+| Situation | Response |
+|---|---|
+| The target answered (`X-Job-State: Completed`) | The target's status, `Content-Type` and body, verbatim |
+| No usable answer (`X-Job-State: Failed`) | `502` `{"handle", "state":"Failed", "error":"Timeout"\|"ConnectionError"\|"ResultTooLarge"}` |
+| Still running | `202`, `Retry-After`, `{"handle", "state":"Enqueued"\|"Processing"\|"Retrying"\|"Scheduled"}` |
+| Unknown key, or `userId` is not the job's `owner` | `404`, the same for both |
+| A `jobKey` job without `keepResult` | `202` while running; `204` once done; `502` `JobFailed` if Hangfire gave up |
+
+`wait` holds the request until the job finishes, up to `wait` seconds, capped at `Scheduler__MaxWaitSeconds`. It
+returns as soon as the job finishes on this replica (an in-process signal), and re-reads the store every second, so
+it also works when another replica runs the job.
+
+```bash
+curl -X POST "localhost:8080/v1/jobs/http/enqueue?destinationUrl=http://echo:8080/report&jobKey=r-42&owner=u1&keepResult=true&queue=async" \
+     -H 'Content-Type: application/json' -d '{"month":"2026-10"}'
+curl "localhost:8080/v1/jobs/r-42/result?userId=u1&wait=20"
+```
+
+The owner check is only as good as the caller that sets `userId`: the scheduler has no authentication of its own, so
+put it behind something that overwrites `userId` with the signed-in user (as an API gateway does), never expose it
+directly.
 
 ## Declarative jobs (no API call needed)
 
@@ -135,7 +185,10 @@ wins. Invalid configuration fails at startup with a clear message in the log.
 | `Scheduler__RedisConnectionString` | string | _(empty)_ | Required when `Storage=Redis`. |
 | `Scheduler__PostgresConnectionString` | string | _(empty)_ | Npgsql connection string. Required when `Storage=Postgres`. |
 | `Scheduler__RedisPrefix` | string | `scheduler:{hangfire}:` | Redis key prefix. **Must contain the literal `{hangfire}`** (a hash tag, required on clustered Redis). Give each environment its own prefix if they share a Redis. Do not reuse the prefix of a different scheduler implementation: its stored jobs cannot be loaded ([runbook](docs/RUNBOOK.md#moving-from-plat-scheduler-the-old-orange-based-image)). |
-| `Scheduler__WorkerCount` | int | `5` | Concurrent callbacks per instance. |
+| `Scheduler__WorkerCount` | int | `5` | Concurrent callbacks per instance (default queue). |
+| `Scheduler__AsyncWorkerCount` | int | `10` | Concurrent callbacks per instance on the `async` queue, a separate pool. |
+| `Scheduler__MaxResultBytes` | int | `1048576` | Largest body kept for a `keepResult` job (1 MiB). Larger is stored as `ResultTooLarge`. |
+| `Scheduler__MaxWaitSeconds` | int | `50` | Cap on `wait` when reading a result. Keep it under your proxies' request timeout. |
 | `Scheduler__ServerTimeoutSeconds` | int | `30` | Seconds without a heartbeat before a worker is presumed dead and its jobs re-queued. |
 | `Scheduler__PollIntervalSeconds` | int | `1` | How often due jobs are picked up. Bounds fire-lag. |
 | `Scheduler__CallbackTimeoutSeconds` | int | `30` | Per-callback HTTP timeout. |

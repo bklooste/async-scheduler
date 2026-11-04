@@ -33,6 +33,7 @@ Validate(options);
 builder.Services.AddHttpClient(HttpCallbackSender.ClientName,
     c => c.Timeout = TimeSpan.FromSeconds(options.CallbackTimeoutSeconds));
 builder.Services.AddTransient<HttpCallbackSender>();
+builder.Services.AddSingleton<ResultStore>();
 
 ConnectionMultiplexer? redis = null;
 var healthChecks = builder.Services.AddHealthChecks();
@@ -53,10 +54,25 @@ builder.Services.AddHangfire(c =>
             new PostgreSqlStorageOptions { InvisibilityTimeout = TimeSpan.FromSeconds(options.InvisibilityTimeoutSeconds) });
     else
         c.UseInMemoryStorage();
+    // Wakes result reads waiting on a job. Filters are process-wide in Hangfire, so add it once.
+    if (!GlobalJobFilters.Filters.Any(f => f.Instance is JobStateSignalFilter))
+        c.UseFilter(JobStateSignalFilter.Instance);
+});
+// Two servers, two worker pools: delayed callbacks on the default queue, and long calls (enqueue?queue=async) on
+// their own, so a slow async call can never hold the workers that time-critical callbacks need.
+builder.Services.AddHangfireServer(o =>
+{
+    o.ServerName = $"{Environment.MachineName}:{SchedulerApi.DefaultQueue}";
+    o.Queues = [SchedulerApi.DefaultQueue];
+    o.WorkerCount = options.WorkerCount;
+    o.ServerTimeout = TimeSpan.FromSeconds(options.ServerTimeoutSeconds);
+    o.SchedulePollingInterval = TimeSpan.FromSeconds(options.PollIntervalSeconds);
 });
 builder.Services.AddHangfireServer(o =>
 {
-    o.WorkerCount = options.WorkerCount;
+    o.ServerName = $"{Environment.MachineName}:{SchedulerApi.AsyncQueue}";
+    o.Queues = [SchedulerApi.AsyncQueue];
+    o.WorkerCount = options.AsyncWorkerCount;
     o.ServerTimeout = TimeSpan.FromSeconds(options.ServerTimeoutSeconds);
     o.SchedulePollingInterval = TimeSpan.FromSeconds(options.PollIntervalSeconds);
 });
