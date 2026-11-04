@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: service
-          image: ghcr.io/bklooste/async-scheduler/service:1.0   # pin an explicit version
+          image: ghcr.io/bklooste/async-scheduler/service:0.3.1   # pin an explicit version
           ports:
             - containerPort: 8080
           env:
