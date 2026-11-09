@@ -69,7 +69,7 @@ jobs:
 
       - name: Compute version (Nerdbank.GitVersioning)
         id: nbgv
-        uses: dotnet/nbgv@v0.4
+        uses: dotnet/nbgv@v0.5
         with:
           setAllVars: true
 
