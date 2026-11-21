@@ -15,6 +15,10 @@ env:
 jobs:
   test:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'lode-ci' }}
+    env:
+      # Unique per run: the box runners share one Docker daemon.
+      SMOKE: smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      COMPOSE_PROJECT_NAME: ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,16 +45,22 @@ jobs:
 
       # Container smoke test: the built image must start and report healthy before it can be published.
       - name: Build image
-        run: docker build -t smoke:ci .
+        run: docker build -t "$SMOKE:ci" .
       - name: Smoke test
         run: |
-          docker run -d --name smoke -p 8080:8080 smoke:ci
+          docker run -d --name "$SMOKE" "$SMOKE:ci"
           for i in $(seq 1 30); do
-            [ "$(docker inspect -f '{{.State.Health.Status}}' smoke)" = healthy ] && exit 0
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$SMOKE")" = healthy ] && exit 0
             sleep 2
           done
-          docker logs smoke
+          docker logs "$SMOKE"
           exit 1
+      - name: Smoke cleanup
+        if: always()
+        run: |
+          docker rm -f "$SMOKE" "$SMOKE-redis" 2>/dev/null || true
+          docker network rm "$SMOKE" 2>/dev/null || true
+          docker rmi "$SMOKE:ci" 2>/dev/null || true
 
   publish:
     needs: test
