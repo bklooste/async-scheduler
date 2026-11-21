@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: docker.io/kaisea/async-scheduler
+  IMAGE: docker.io/bklooste/async-scheduler
 
 jobs:
   test:

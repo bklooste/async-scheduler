@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: service
-          image: kaisea/async-scheduler:0.3.1   # pin an explicit version
+          image: bklooste/async-scheduler:0.3.1   # pin an explicit version
           ports:
             - containerPort: 8080
           env:
