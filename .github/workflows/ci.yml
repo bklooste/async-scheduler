@@ -77,6 +77,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The org name is upper case; image references must be lower case.
+      - name: Lower-case image name
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+
+      # Box runners have no preinstalled .NET; nbgv runs `dotnet tool install`.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Compute version (Nerdbank.GitVersioning)
         id: nbgv
         uses: dotnet/nbgv@v0.4
