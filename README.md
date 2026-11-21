@@ -1,7 +1,7 @@
 # async-scheduler
 
 [![CI](https://github.com/bklooste/async-scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/bklooste/async-scheduler/actions/workflows/ci.yml)
-[![Image](https://img.shields.io/badge/ghcr.io-async--scheduler-blue)](https://github.com/bklooste/async-scheduler/pkgs/container/async-scheduler%2Fservice)
+[![Docker Hub](https://img.shields.io/docker/v/kaisea/async-scheduler?label=docker%20hub)](https://hub.docker.com/r/kaisea/async-scheduler)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A small HTTP service that **calls your URLs back later**. Two things it is good at:
@@ -23,7 +23,7 @@ optional **operator dashboard** for seeing why a job failed and retrying it.
 One command, no clone and no build — the image is public on GHCR:
 
 ```bash
-docker run -d --name scheduler -p 8080:8080 ghcr.io/bklooste/async-scheduler/service:latest
+docker run -d --name scheduler -p 8080:8080 kaisea/async-scheduler:latest
 ```
 
 For the full demo (an `echo` container standing in for *your app*, plus a declarative job), grab the compose file:

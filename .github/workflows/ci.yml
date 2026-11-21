@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}/service
+  IMAGE: docker.io/kaisea/async-scheduler
 
 jobs:
   test:
@@ -69,17 +69,12 @@ jobs:
     environment: production
     permissions:
       contents: write        # tag + release
-      packages: write        # push to GHCR with GITHUB_TOKEN — no stored PAT
       id-token: write        # provenance attestation
       attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      # The org name is upper case; image references must be lower case.
-      - name: Lower-case image name
-        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
 
       # Box runners have no preinstalled .NET; nbgv runs `dotnet tool install`.
       - uses: actions/setup-dotnet@v4
@@ -96,9 +91,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Image tags
         id: meta
@@ -132,13 +127,12 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
+          push-to-registry: false   # attestation stays on GitHub
 
-      # Verify the package is anonymously pullable (public). Fails the first publish if visibility
-      # was not switched to public — a one-time manual step per package in GitHub package settings.
+      # Verify the image is anonymously pullable from Docker Hub.
       - name: Verify anonymous pull
         run: |
-          docker logout ghcr.io
+          docker logout docker.io
           docker pull "$IMAGE:${{ steps.nbgv.outputs.SimpleVersion }}"
 
       - name: Generate SBOM + NOTICE inventory

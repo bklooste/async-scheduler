@@ -6,7 +6,7 @@
 # For durable jobs, run with Redis:   docker compose --profile redis up
 services:
   scheduler:
-    image: ghcr.io/bklooste/async-scheduler/service:latest
+    image: kaisea/async-scheduler:latest
     # build: .          # uncomment to build from source instead of pulling
     ports:
       - "8080:8080"
